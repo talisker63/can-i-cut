@@ -1,7 +1,7 @@
 # shipit
 
-Write your command content here.
 npm run build
-firebase deploy --only hosting
+npm --prefix functions run build
+firebase deploy --only hosting,functions
 
 This command will be available in chat with /shipit
