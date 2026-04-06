@@ -38,5 +38,5 @@ export function getFirebaseStorage() {
 
 export function getFirebaseFunctions() {
   const a = getFirebaseApp();
-  return a ? getFunctions(a) : null;
+  return a ? getFunctions(a, "us-central1") : null;
 }

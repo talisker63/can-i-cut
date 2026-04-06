@@ -3,7 +3,7 @@
   "private": true,
   "main": "lib/index.js",
   "engines": {
-    "node": ">=20"
+    "node": "22"
   },
   "scripts": {
     "build": "tsc",
@@ -11,6 +11,7 @@
     "serve": "npm run build && firebase emulators:start --only functions"
   },
   "dependencies": {
+    "@google-cloud/vertexai": "^1.10.4",
     "firebase-admin": "^13.0.2",
     "firebase-functions": "^6.3.2",
     "resend": "^4.1.2"
