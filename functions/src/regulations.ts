@@ -1,10 +1,17 @@
 import { VertexAI } from "@google-cloud/vertexai";
+import { formatCuratedLocalLawForPrompt, type VicLgaTreeLocalLawEntry } from "./vic-lga-tree-local-law";
 
 export type TreeKind = "native" | "non_native" | "noxious";
 
 export type RegulationPayload = {
-  councilRegulationBullets: string[];
-  stateRegulationBullets: string[];
+  privateLandScopeNote: string;
+  treeSizeMeasurementBullets: string[];
+  lgaPrivateTreeProtectionBullets: string[];
+  pruneTypicallyAllowedWithoutPermitBullets: string[];
+  pruneTypicallyRequiresApprovalBullets: string[];
+  removalTypicallyAllowedWithoutPermitBullets: string[];
+  removalTypicallyRequiresApprovalBullets: string[];
+  statePrivateLandConsiderationsBullets: string[];
   nativeOrNoxiousBullets: string[];
   regulatoryRelationshipNote: string;
   lastUpdatedNote: string;
@@ -36,8 +43,14 @@ function parseModelJson(text: string): RegulationPayload {
   }
   const parsed = JSON.parse(t) as RegulationPayload;
   if (
-    !Array.isArray(parsed.councilRegulationBullets) ||
-    !Array.isArray(parsed.stateRegulationBullets) ||
+    typeof parsed.privateLandScopeNote !== "string" ||
+    !Array.isArray(parsed.treeSizeMeasurementBullets) ||
+    !Array.isArray(parsed.lgaPrivateTreeProtectionBullets) ||
+    !Array.isArray(parsed.pruneTypicallyAllowedWithoutPermitBullets) ||
+    !Array.isArray(parsed.pruneTypicallyRequiresApprovalBullets) ||
+    !Array.isArray(parsed.removalTypicallyAllowedWithoutPermitBullets) ||
+    !Array.isArray(parsed.removalTypicallyRequiresApprovalBullets) ||
+    !Array.isArray(parsed.statePrivateLandConsiderationsBullets) ||
     !Array.isArray(parsed.nativeOrNoxiousBullets) ||
     typeof parsed.regulatoryRelationshipNote !== "string" ||
     typeof parsed.lastUpdatedNote !== "string"
@@ -70,7 +83,7 @@ async function runVertexPrompt(
     model: modelId,
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.35,
+      temperature: 0.25,
     },
   });
   const result = await model.generateContent({
@@ -85,29 +98,51 @@ export async function generateRegulationSummary(
     lgaName: string;
     formattedAddress: string;
     treeKind: TreeKind;
+    curatedEntry: VicLgaTreeLocalLawEntry;
   },
 ): Promise<RegulationPayload> {
-  const prompt = `You summarise tree pruning and removal compliance guidance for qualified arborists working in Victoria, Australia only.
+  const curatedBlock = formatCuratedLocalLawForPrompt(input.curatedEntry);
+
+  const prompt = `You advise qualified arborists in Victoria, Australia. The client cares only about trees on PRIVATE LAND (allotment boundaries, residential or commercial private property). Do not centre advice on street trees, nature strips, or council‑managed public trees; mention briefly that those are usually council‑controlled and different rules apply.
+
+---
+${curatedBlock}
+---
 
 Site context:
-- Resolved council (LGA): ${input.lgaName}
-- Geocoded address label: ${input.formattedAddress}
-- Tree category for the user: ${input.treeKind} (${treeKindLabel(input.treeKind)})
+- Council (LGA): ${input.lgaName}
+- Address (geocoded label): ${input.formattedAddress}
+- Tree kind hint: ${input.treeKind} (${treeKindLabel(input.treeKind)})
 
-Output requirements:
-- Produce concise dot-point bullets only (no numbering prefix in the string content).
-- councilRegulationBullets: rules typically enforced or administered by ${input.lgaName} under local planning schemes, local laws, and council tree/vegetation controls where relevant to pruning or removal near private property or public land interfaces. Do not invent permit or DA numbers.
-- stateRegulationBullets: Victoria-wide rules that commonly apply (for example native vegetation controls, biodiversity, protected species, fire/fuel management where relevant, roadside management where relevant, agricultural weed/noxious declarations where relevant). Stay high level and avoid inventing instrument numbers.
-- nativeOrNoxiousBullets: If treeKind is native or noxious, add extra bullets that distinguish how those categories may change obligations. If treeKind is non_native, return an empty array for nativeOrNoxiousBullets.
-- regulatoryRelationshipNote: Explain in plain English that both council and Victoria state requirements can apply; council rules can be stricter or more site-specific; the more restrictive or specific requirement usually governs for that site; state law still applies where not displaced. This is general guidance only.
-- lastUpdatedNote: One sentence that the user must verify details against current council planning scheme, overlays, permits, and state law before acting.
+Your job: summarise how ${input.lgaName} typically protects trees on private land under local law and planning scheme tools, and what an arborist should verify before pruning or removing. Use plain language. This is general guidance only, not legal advice.
 
-If uncertain about a specific control, say to confirm with ${input.lgaName} and to check current Victorian instruments rather than guessing.
+If the curated block above contains verified or partial measurements for ${input.lgaName}, you MUST weave those measurements and permit triggers into treeSizeMeasurementBullets and the four prune/removal bullet lists. Do not contradict the curated figures. If status is pending, you must not invent thresholds and must say this council is not yet numerically curated in the app.
+
+Rules:
+- treeSizeMeasurementBullets: Short bullets on what to measure on site and how (Australian standard DBH at 1.3 m unless multi‑stem; total height; canopy spread if relevant). Explain that ${input.lgaName} often ties permit triggers to size classes or “significant” definitions — the arborist must compare measured dimensions to the CURRENT local law / planning scheme for ${input.lgaName}. Do not invent numeric thresholds (no fake cm, m, or percentages). If you mention example sizes, label them clearly as illustrative and say to confirm from council.
+- lgaPrivateTreeProtectionBullets: Dot points on how ${input.lgaName} typically applies tree protection ON PRIVATE LAND (local law permit for removal or substantial pruning; planning permits when overlays/schedules apply; municipal significant tree registers; heritage overlays). Name mechanisms, not fake clause numbers.
+- pruneTypicallyAllowedWithoutPermitBullets: Work that is often exempt or low‑risk for private trees under typical council frameworks (e.g. deadwood removal within exempt categories, minor formative pruning where local law allows). Use cautious wording (“often”, “may”) and say confirm current ${input.lgaName} local law.
+- pruneTypicallyRequiresApprovalBullets: Private‑tree pruning that commonly needs a permit or approval (e.g. crown reduction beyond minor maintenance, lopping above exempt thresholds, pruning listed or overlay‑protected trees). No invented permit codes.
+- removalTypicallyAllowedWithoutPermitBullets: Rare cases sometimes allowed without a tree permit (e.g. dead/dangerous tree with conditions, noxious species where state/local law allows) — stress verification with ${input.lgaName}.
+- removalTypicallyRequiresApprovalBullets: Removal situations that typically need approval on private land (over size thresholds, heritage, vegetation overlays, significant tree listing, native vegetation pathways where applicable).
+- statePrivateLandConsiderationsBullets: Brief Victorian state layers that still affect private blocks (relevant planning overlays on VicPlan, native vegetation where triggered, wildlife). Avoid inventing instrument numbers.
+- nativeOrNoxiousBullets: If treeKind is native or noxious, add bullets on how that can change removal or clearing obligations on private land. If non_native, return [].
+- privateLandScopeNote: Two or three sentences restating private‑land focus and that measured size must be checked against ${input.lgaName}’s current instruments.
+- regulatoryRelationshipNote: One short paragraph: council local law and planning scheme can both apply to private sites; stricter rule wins; verify VicPlan and council.
+- lastUpdatedNote: One sentence: verify all details against current ${input.lgaName} local law, planning scheme, VicPlan, and registers before works.
+
+If unsure about ${input.lgaName}, say to confirm with the council rather than guessing.
 
 Return ONLY valid JSON with this exact shape (no markdown fences):
 {
-  "councilRegulationBullets": ["..."],
-  "stateRegulationBullets": ["..."],
+  "privateLandScopeNote": "...",
+  "treeSizeMeasurementBullets": ["..."],
+  "lgaPrivateTreeProtectionBullets": ["..."],
+  "pruneTypicallyAllowedWithoutPermitBullets": ["..."],
+  "pruneTypicallyRequiresApprovalBullets": ["..."],
+  "removalTypicallyAllowedWithoutPermitBullets": ["..."],
+  "removalTypicallyRequiresApprovalBullets": ["..."],
+  "statePrivateLandConsiderationsBullets": ["..."],
   "nativeOrNoxiousBullets": ["..."],
   "regulatoryRelationshipNote": "...",
   "lastUpdatedNote": "..."
